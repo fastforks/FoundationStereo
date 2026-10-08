@@ -154,7 +154,8 @@ class DPT_DINOv2(nn.Module):
         # if localhub:
         #     self.pretrained = torch.hub.load('torchhub/facebookresearch_dinov2_main', 'dinov2_{:}14'.format(encoder), source='local', pretrained=False)
         # else:
-        self.pretrained = torch.hub.load('facebookresearch/dinov2', 'dinov2_{:}14'.format(encoder), pretrained=pretrained_dino)
+        # baseline-compat: use the vendored dinov2 copy instead of fetching the GitHub repo at runtime (same code, no math change)
+        self.pretrained = torch.hub.load(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dinov2'), 'dinov2_{:}14'.format(encoder), source='local', pretrained=pretrained_dino)
 
 
         dim = self.pretrained.blocks[0].attn.qkv.in_features
