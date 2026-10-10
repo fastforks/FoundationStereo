@@ -409,8 +409,9 @@ class GeoFast:
             Wn = c.shape[-1] // 2
             self.corr.append((0.5 * (c[..., 0:2 * Wn:2] + c[..., 1:2 * Wn:2])).contiguous())
         self.wpos = torch.arange(W, device=comb.device, dtype=torch.float32).view(1, 1, W, 1)
-        hw = torch.arange(H * W, device=comb.device).view(1, H, W, 1)
-        self.bhw = (torch.arange(B, device=comb.device).view(B, 1, 1, 1) * H * W + hw)  # (B,H,W,1)
+        self.hw = torch.arange(H * W, device=comb.device).view(1, H, W, 1)
+        self.b = torch.arange(B, device=comb.device).view(B, 1, 1, 1)
+        self.bhw = self.b * H * W + self.hw  # (B,H,W,1)
 
     @staticmethod
     def _lerp_index(rows_base, stride, pos, n):
@@ -436,7 +437,7 @@ class GeoFast:
             Di = g.shape[1]
             pos = d / s + self.dx                            # (B,H,W,K)
             # row of (b, d, h, w) in g.view(-1, C): (b*Di + d)*H*W + h*W + w
-            base = (self.bhw // (H * W)) * Di * H * W + (self.bhw % (H * W))
+            base = self.b * (Di * H * W) + self.hw
             r0, r1, w0, w1 = self._lerp_index(base, H * W, pos, Di)
             gf = g.reshape(-1, C)
             dt = g.dtype
