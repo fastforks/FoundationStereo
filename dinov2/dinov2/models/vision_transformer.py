@@ -42,6 +42,30 @@ class BlockChunk(nn.ModuleList):
         return x
 
 
+
+def _bicubic_matrix(n, offset, M, device):
+    """[n, M] matrix of PyTorch's bicubic upsampling (align_corners=False, A=-0.75, border clamp) from M to n samples with
+    scale_factor (n + offset) / M: source = (i + 0.5) * M / (n + offset) - 0.5 (as upsample_bicubic2d; tensor math so that
+    n may be symbolic)."""
+    i = torch.arange(n, device=device, dtype=torch.float32)
+    src = (i + 0.5) * (M / (i.new_ones(()) * n + offset)) - 0.5
+    x0 = torch.floor(src)
+    t = src - x0
+    A = -0.75
+
+    def near(d):  # |d| <= 1
+        return ((A + 2) * d - (A + 3)) * d * d + 1
+
+    def far(d):   # 1 < |d| < 2
+        return ((A * d - 5 * A) * d + 8 * A) * d - 4 * A
+
+    cols = torch.arange(M, device=device)
+    mat = torch.zeros((n, M), device=device, dtype=torch.float32)
+    for k, c in enumerate((far(t + 1), near(t), near(1 - t), far(2 - t))):
+        idx = (x0.long() - 1 + k).clamp(0, M - 1)
+        mat = mat + c[:, None] * (idx[:, None] == cols[None, :]).float()
+    return mat
+
 class DinoVisionTransformer(nn.Module):
     def __init__(
         self,
@@ -181,7 +205,7 @@ class DinoVisionTransformer(nn.Module):
         previous_dtype = x.dtype
         npatch = x.shape[1] - 1
         N = self.pos_embed.shape[1] - 1
-        if npatch == N and w == h:
+        if not torch.compiler.is_exporting() and npatch == N and w == h:  # (shape test skipped while exporting)
             return self.pos_embed
         pos_embed = self.pos_embed.float()
         class_pos_embed = pos_embed[:, 0]
@@ -191,23 +215,21 @@ class DinoVisionTransformer(nn.Module):
         h0 = h // self.patch_size
         M = int(math.sqrt(N))  # Recover the number of patches in each dimension
         assert N == M * M
-        kwargs = {}
-        if self.interpolate_offset:
-            # Historical kludge: add a small number to avoid floating point error in the interpolation, see https://github.com/facebookresearch/dino/issues/8
-            # Note: still needed for backward-compatibility, the underlying operators are using both output size and scale factors
-            sx = float(w0 + self.interpolate_offset) / M
-            sy = float(h0 + self.interpolate_offset) / M
-            kwargs["scale_factor"] = (sx, sy)
+        grid = patch_pos_embed.reshape(1, M, M, dim).permute(0, 3, 1, 2)
+        if self.interpolate_offset and not self.interpolate_antialias:
+            # Historical kludge (scale_factor (n + offset) / M, see https://github.com/facebookresearch/dino/issues/8),
+            # as two bicubic interpolation matrices built from the token grid size (== F.interpolate up to fp32
+            # rounding; no Python float of the grid size, so it traces with dynamic H/W for export)
+            ry = _bicubic_matrix(w0, self.interpolate_offset, M, grid.device)
+            rx = _bicubic_matrix(h0, self.interpolate_offset, M, grid.device)
+            patch_pos_embed = torch.einsum("ym,bcmn,xn->bcyx", ry, grid, rx).contiguous()
         else:
-            # Simply specify an output size instead of a scale factor
-            kwargs["size"] = (w0, h0)
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.reshape(1, M, M, dim).permute(0, 3, 1, 2),
-            mode="bicubic",
-            antialias=self.interpolate_antialias,
-            **kwargs,
-        )
-        assert (w0, h0) == patch_pos_embed.shape[-2:]
+            kwargs = {}
+            if self.interpolate_offset:
+                kwargs["scale_factor"] = (float(w0 + self.interpolate_offset) / M, float(h0 + self.interpolate_offset) / M)
+            else:
+                kwargs["size"] = (w0, h0)
+            patch_pos_embed = nn.functional.interpolate(grid, mode="bicubic", antialias=self.interpolate_antialias, **kwargs)
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1).to(previous_dtype)
 
