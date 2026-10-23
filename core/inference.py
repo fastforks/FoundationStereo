@@ -18,7 +18,6 @@ Changes vs upstream forward (math-preserving unless noted):
     (upstream: torch.unique asserts = 4 syncs per iteration)
   - upsampling mask head only after the last iteration; features of the two images one after the other
 """
-import math
 from dataclasses import dataclass
 
 import numpy as np
