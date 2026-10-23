@@ -1,6 +1,6 @@
 # FoundationStereo: faster inference fork
 
-> **You are on `portable`.** Research fork of [NVlabs/FoundationStereo](https://github.com/NVlabs/FoundationStereo) (base `6e88068`, 2025-12-18; `main` mirrors upstream). Two branches:
+> **You are on `cuda-kernels`.** Research fork of [NVlabs/FoundationStereo](https://github.com/NVlabs/FoundationStereo) (base `6e88068`, 2025-12-18; `main` mirrors upstream). Two branches:
 > - [`portable`](https://github.com/fastforks/FoundationStereo/tree/portable): plain PyTorch (`core/inference.py`), exports to ONNX / TensorRT, no build step.
 > - [`cuda-kernels`](https://github.com/fastforks/FoundationStereo/tree/cuda-kernels): `portable` plus custom CUDA kernels (`core/inference_cuda.py`; prebuilt for sm_80/86/89/90/120 + PTX, built on first use from `CUDA_HOME` + `CUTLASS_DIR` when no prebuilt matches; fp16-accumulate convs need `pip install nvidia-cudnn-frontend`).
 >
