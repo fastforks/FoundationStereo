@@ -1,3 +1,29 @@
+# FoundationStereo: faster inference fork
+
+> **You are on `portable`.** Research fork of [NVlabs/FoundationStereo](https://github.com/NVlabs/FoundationStereo) (base `6e88068`, 2025-12-18; `main` mirrors upstream). Two branches:
+> - [`portable`](https://github.com/fastforks/FoundationStereo/tree/portable): plain PyTorch (`core/inference.py`), exports to ONNX / TensorRT, no build step.
+> - [`cuda-kernels`](https://github.com/fastforks/FoundationStereo/tree/cuda-kernels): `portable` plus custom CUDA kernels (`core/inference_cuda.py`; prebuilt for sm_80/86/89/90/120 + PTX, built on first use from `CUDA_HOME` + `CUTLASS_DIR` when no prebuilt matches; fp16-accumulate convs need `pip install nvidia-cudnn-frontend`).
+>
+> Licence, as upstream: code and weights NVIDIA licence (non-commercial / research only, see [LICENSE](LICENSE))
+
+```python
+from core.inference import prepare_inference, forward_fast, Opts        # portable
+prepare_inference(model, Opts()); disp = forward_fast(model, L, R, iters=32)
+from core.inference_cuda import prepare_inference, forward_fast, Opts   # cuda-kernels
+prepare_inference(model, Opts(hacc=True, gacc=True, kern=True, fused=True, c3d=True))
+```
+
+FoundationStereo ViT-L (`23-51-11`), valid_iters 32, fp16 autocast (upstream) / fp16 (forks), pad /32; RTX 5060 Ti 16 GB, torch 2.14.1+cu130, TensorRT 11.4, 2026-10-23. Median of 10 runs after 3 warm-ups; memory = torch peak allocated / reserved (TensorRT: engine device memory). EPE on 6 ETH3D and 3 Middlebury-H training pairs (short check, not a full eval).
+
+| version | KITTI ms | Midd-H ms | Midd-F ms | speed-up at H | peak MB at H (alloc / reserved) | peak MB at F (alloc / reserved) | startup / new size | ETH3D EPE | Midd-H EPE |
+|---|---|---|---|---|---|---|---|---|---|
+| upstream | 1291 | 4245 | not measured | 1.00x | 8250 / 8912 | not measured | 10.7 s / 30 ms | 0.251 | 0.242 |
+| **portable** | 904.8 | 2989 | not measured | 1.42x | 3136 / 3436 | not measured | 8.1 s / 10 ms | 0.252 | 0.242 |
+| portable → TensorRT | 492.4 | 1569 | not measured | 2.71x | ctx 10049 | not measured | 4.6 s / none | not measured | not measured |
+| **cuda-kernels** | 486.1 | 1495 | not measured | 2.84x | 2810 / 3280 | not measured | 8.2 s / 30 ms | 0.250 | 0.241 |
+
+---
+
 # FoundationStereo: Zero-Shot Stereo Matching
 
 This is the official implementation of our paper accepted by CVPR 2025 Oral (**Best Paper Nomination**)
